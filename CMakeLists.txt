@@ -9,6 +9,9 @@ target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
 if(NOT CMAKE_BUILD_TYPE)
    set(CMAKE_BUILD_TYPE Release ... FORCE )
 endif()
+if(CMAKE_BUILD_TYPE MATCHES Debug)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE DEBUG=1)
+endif()
 message("Build type: ${CMAKE_BUILD_TYPE}")
 
 # Sources directory
