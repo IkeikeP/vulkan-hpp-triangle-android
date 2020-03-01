@@ -1,4 +1,6 @@
-#define GLFW_INCLUDE_VULKAN
+//#define GLFW_INCLUDE_VULKAN
+#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
+#include <vulkan/Vulkan.hpp>
 #include <GLFW/glfw3.h>
 
 #include <iostream>
@@ -8,6 +10,9 @@
 #ifdef DEBUG
 #include <magic_enum.hpp>
 #endif
+
+VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
+
 static constexpr int k_width = 800;
 static constexpr int k_height = 600;
 
@@ -17,7 +22,6 @@ static constexpr int k_height = 600;
 const std::vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
 };
-
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -30,34 +34,18 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     return VK_FALSE;
 }
 
-static VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger) {
-    auto func = (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
-    if (func != nullptr) {
-        return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
-    } else {
-        return VK_ERROR_EXTENSION_NOT_PRESENT;
-    }
-}
-
-static void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator) {
-    auto func = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
-    if (func != nullptr) {
-        func(instance, debugMessenger, pAllocator);
-    }
-}
 #endif
 
 class HelloTriangleApplication {
 public:
     void run() {
 #ifdef DEBUG
-        std::cout << "TEST" << std::endl;
+        std::cout << "DEBUG BUILD" << std::endl;
 #endif
         initWindow();
         initVulkan();
         mainLoop();
         cleanup();
-
     }
 
 #ifdef DEBUG
@@ -92,13 +80,7 @@ private:
     }
 
     void pickPhysicalDevice() {
-        uint32_t deviceCount = 0;
-        vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
-        if (deviceCount == 0) {
-            throw std::runtime_error("failed to find GPUs with Vulkan support!");
-        }
-        std::vector<VkPhysicalDevice> devices(deviceCount);
-        vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+        auto devices = instance.enumeratePhysicalDevices();
 
         for (const auto& device : devices) {
             if (isDeviceSuitable(device)) {
@@ -107,15 +89,14 @@ private:
             }
         }
 
-        if (physicalDevice == VK_NULL_HANDLE) {
+        if (physicalDevice) {
             throw std::runtime_error("failed to find a suitable GPU!");
         }
-
     }
 
-    bool isDeviceSuitable(VkPhysicalDevice device) {
-        return true;
-    }    
+    bool isDeviceSuitable(vk::PhysicalDevice device) {
+        return !!physicalDevice;
+    }
 
     void initWindow() {
         glfwInit();
@@ -129,61 +110,55 @@ private:
             glfwPollEvents();
         }
     }
+
     void createInstance() {
+        using namespace vk;
+        vk::DynamicLoader dl;
+        PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
+        VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
 #ifdef DEBUG
         if (!checkValidationLayerSupport()) {
             throw std::runtime_error("validation layers requested, but not available!");
         }
 #endif
-        VkInstanceCreateInfo createInfo = {};
-        VkApplicationInfo appInfo = getApplicationInfo();
-        createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-        createInfo.pApplicationInfo = &appInfo;
+        const ApplicationInfo appInfo = getApplicationInfo();
         auto extensions = getRequiredExtensions();
-        createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
-        createInfo.ppEnabledExtensionNames = extensions.data();
+        InstanceCreateInfo createInfo(vk::InstanceCreateFlags(), 
+                                      &appInfo,
 #ifdef DEBUG
-        VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo;
-        createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
-        createInfo.ppEnabledLayerNames = validationLayers.data();
-        populateDebugMessengerCreateInfo(debugCreateInfo);
-        createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT*)&debugCreateInfo;
+                                      static_cast<uint32_t>(validationLayers.size()),
+                                      validationLayers.data(),
 #else
-        createInfo.enabledLayerCount = 0;
-        createInfo.pNext = nullptr;
-#endif 
-        VkResult result = vkCreateInstance(&createInfo, nullptr, &instance);
-        if (result != VK_SUCCESS) {
-            std::string message = "Failed to create Vulkan instance";
-#ifdef DEBUG
-            message += magic_enum::enum_name(result);
+                                      0,
+                                      nullptr,
 #endif
-            throw std::runtime_error(message);
-        }
+                                      static_cast<uint32_t>(extensions.size()),
+                                      extensions.data());
+#ifdef DEBUG
+        vk::DebugUtilsMessengerCreateInfoEXT debugCreateInfo = createDebugMessenger();
+        createInfo.setPNext(&debugCreateInfo);
+#endif
+
+        instance = vk::createInstance(createInfo);
+        VULKAN_HPP_DEFAULT_DISPATCHER.init(instance);
     }
+    
 #ifdef DEBUG
     void setupDebugMessenger() {
-        VkDebugUtilsMessengerCreateInfoEXT createInfo = {};
-        populateDebugMessengerCreateInfo(createInfo);
-        if (CreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &debugMessenger) != VK_SUCCESS) {
-            throw std::runtime_error("failed to set up debug messenger!");
-        }
+        vk::DebugUtilsMessengerCreateInfoEXT createInfo = createDebugMessenger();
+        debugMessenger = instance.createDebugUtilsMessengerEXT(createInfo);
+    }
+
+    vk::DebugUtilsMessengerCreateInfoEXT createDebugMessenger() {
+        return vk::DebugUtilsMessengerCreateInfoEXT(vk::DebugUtilsMessengerCreateFlagsEXT(), 
+                                                    vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
+                                                    vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
+                                                    debugCallback);
     }
 #endif
 
-#ifdef DEBUG
-    void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo) {
-        createInfo = {};
-        createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-        createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-        createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-        createInfo.pfnUserCallback = debugCallback;
-    }
-#endif
-
-    VkApplicationInfo getApplicationInfo() {
-        return { VK_STRUCTURE_TYPE_APPLICATION_INFO, nullptr, "Hello Triangle", VK_MAKE_VERSION(1, 0, 0), 
-                "No Engine", VK_MAKE_VERSION(1, 0, 0), VK_API_VERSION_1_0 };
+    vk::ApplicationInfo getApplicationInfo() {
+        return vk::ApplicationInfo("Hello Triangle", VK_MAKE_VERSION(1, 0, 0), "No Engine", VK_MAKE_VERSION(1, 0, 0), VK_API_VERSION_1_0);
     }
 
     std::vector<const char*> getRequiredExtensions() {
@@ -214,23 +189,23 @@ private:
 
     void cleanup() {
 #ifdef DEBUG
-        DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
+        instance.destroyDebugUtilsMessengerEXT(debugMessenger);
 #endif
 
-        vkDestroyInstance(instance, nullptr);
+        instance.destroy();
         glfwDestroyWindow(window);
         glfwTerminate();
     }
     
-    VkInstance instance;
-    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-    VkDebugUtilsMessengerEXT debugMessenger;
+    vk::Instance instance;
+    vk::PhysicalDevice physicalDevice;
+    vk::DebugUtilsMessengerEXT debugMessenger;
     GLFWwindow* window;
 };
 
 int main() {
     try {
-    HelloTriangleApplication app {};
+        HelloTriangleApplication app {};
         app.run();
     } catch (const std::exception& e) {
         std::cerr << "Error:" << e.what() << std::endl;

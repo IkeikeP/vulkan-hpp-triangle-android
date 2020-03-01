@@ -24,8 +24,7 @@ if(${VULKAN_FOUND})
     message("Vulkan_LIBRARY: " ${Vulkan_LIBRARY})
     message("Vulkan_INCLUDE_DIR: " ${Vulkan_INCLUDE_DIR}) 
 else() 
-    message(FATAL_ERROR "Vulkan not found, please verify if vulkan is installed.")
-
+    message(FATAL_ERROR "Vulkan not found, please verify if vulkan sdk is installed.")
 endif()
 
 # glfw
