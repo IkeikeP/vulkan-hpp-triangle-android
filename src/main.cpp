@@ -81,21 +81,33 @@ private:
 
     void pickPhysicalDevice() {
         auto devices = instance.enumeratePhysicalDevices();
-
+        int bestScore = 0;
+        vk::PhysicalDevice bestScoredDevice;
         for (const auto& device : devices) {
-            if (isDeviceSuitable(device)) {
-                physicalDevice = device;
-                break;
+            int score = rateDeviceSuitability(device);
+            if (score > bestScore) {
+                bestScore = score;
+                bestScoredDevice = device;
             }
         }
 
-        if (physicalDevice) {
+        if (!bestScoredDevice || bestScore == 0) {
             throw std::runtime_error("failed to find a suitable GPU!");
+        } else {
+            std::cout << "GPU:" << bestScoredDevice.getProperties().deviceName << "(" << bestScore << ")" << std::endl;
         }
+
     }
 
-    bool isDeviceSuitable(vk::PhysicalDevice device) {
-        return !!physicalDevice;
+    int rateDeviceSuitability(vk::PhysicalDevice device) {
+        auto features = device.getFeatures();
+        if (!features.geometryShader)
+            return 0;
+        int score = 0;
+        auto properties = device.getProperties();
+        score += properties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu ? 1000 : 0;
+        score += properties.limits.maxImageDimension2D;
+        return score;
     }
 
     void initWindow() {
