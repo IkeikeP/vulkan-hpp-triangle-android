@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <functional>
 #include <cstdlib>
+#include <optional>
 #ifdef DEBUG
 #include <magic_enum.hpp>
 #endif
@@ -46,6 +47,28 @@ public:
         initVulkan();
         mainLoop();
         cleanup();
+    }
+    struct QueueFamilyIndices {
+        std::optional<uint32_t> graphicsFamily;
+    };
+
+    QueueFamilyIndices findQueueFamilies(vk::PhysicalDevice device) {
+        QueueFamilyIndices indices;
+        uint32_t index = 0;
+        auto queueFamilies = device.getQueueFamilyProperties();
+        
+        for (const auto& queueFamily : queueFamilies) {
+            if (queueFamily.queueFlags & vk::QueueFlagBits::eGraphics) {
+                indices.graphicsFamily = index;
+                break;
+            }
+            index++;
+        }
+        return indices;
+    }
+
+    bool isDeviceSuitable(vk::PhysicalDevice device) {
+        return findQueueFamilies(device).graphicsFamily.has_value();
     }
 
 #ifdef DEBUG
@@ -96,12 +119,11 @@ private:
         } else {
             std::cout << "GPU:" << bestScoredDevice.getProperties().deviceName << "(" << bestScore << ")" << std::endl;
         }
-
     }
 
     int rateDeviceSuitability(vk::PhysicalDevice device) {
         auto features = device.getFeatures();
-        if (!features.geometryShader)
+        if (!features.geometryShader || !isDeviceSuitable(device))
             return 0;
         int score = 0;
         auto properties = device.getProperties();
