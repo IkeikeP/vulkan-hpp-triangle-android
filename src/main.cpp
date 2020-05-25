@@ -100,6 +100,7 @@ private:
         setupDebugMessenger();
 #endif
         pickPhysicalDevice();
+        createLogicalDevice();
     }
 
     void pickPhysicalDevice() {
@@ -117,8 +118,29 @@ private:
         if (!bestScoredDevice || bestScore == 0) {
             throw std::runtime_error("failed to find a suitable GPU!");
         } else {
+            physicalDevice = bestScoredDevice;
             std::cout << "GPU:" << bestScoredDevice.getProperties().deviceName << "(" << bestScore << ")" << std::endl;
         }
+    }
+
+    void createLogicalDevice() {
+        QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+        float queuePriority = 1.0f;
+        vk::DeviceQueueCreateInfo queueCreateInfo({}, indices.graphicsFamily.value(), 1, &queuePriority);
+        vk::PhysicalDeviceFeatures deviceFeatures{};
+        vk::DeviceCreateInfo createInfo({}, 1, &queueCreateInfo,
+#ifdef DEBUG 
+                                        static_cast<uint32_t>(validationLayers.size()),
+                                        validationLayers.data(),
+#else
+                                        0,
+                                        {},
+#endif
+                                        {}, {}, &deviceFeatures);
+        if (physicalDevice.createDevice(&createInfo, nullptr, &device) != vk::Result::eSuccess) {
+            throw std::runtime_error("Failed to create logical device!");
+        }
+        graphicsQueue = device.getQueue(indices.graphicsFamily.value(), 0);
     }
 
     int rateDeviceSuitability(vk::PhysicalDevice device) {
@@ -225,16 +247,21 @@ private:
 #ifdef DEBUG
         instance.destroyDebugUtilsMessengerEXT(debugMessenger);
 #endif
-
+        device.destroy();
         instance.destroy();
         glfwDestroyWindow(window);
         glfwTerminate();
     }
     
-    vk::Instance instance;
-    vk::PhysicalDevice physicalDevice;
-    vk::DebugUtilsMessengerEXT debugMessenger;
     GLFWwindow* window;
+
+    vk::Instance instance;
+    vk::DebugUtilsMessengerEXT debugMessenger;
+
+    vk::PhysicalDevice physicalDevice;
+    vk::Device device;
+
+    vk::Queue graphicsQueue;
 };
 
 int main() {
