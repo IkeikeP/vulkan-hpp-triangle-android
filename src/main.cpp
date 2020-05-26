@@ -8,6 +8,7 @@
 #include <functional>
 #include <cstdlib>
 #include <optional>
+#include <set>
 #ifdef DEBUG
 #include <magic_enum.hpp>
 #endif
@@ -50,6 +51,11 @@ public:
     }
     struct QueueFamilyIndices {
         std::optional<uint32_t> graphicsFamily;
+        std::optional<uint32_t> presentFamily;
+
+        bool isComplete() {
+            return graphicsFamily.has_value() && presentFamily.has_value();
+        }
     };
 
     QueueFamilyIndices findQueueFamilies(vk::PhysicalDevice device) {
@@ -60,6 +66,12 @@ public:
         for (const auto& queueFamily : queueFamilies) {
             if (queueFamily.queueFlags & vk::QueueFlagBits::eGraphics) {
                 indices.graphicsFamily = index;
+            }
+            vk::Bool32 presentSupport = device.getSurfaceSupportKHR(index, surface);
+            if (presentSupport) {
+                indices.presentFamily = index;
+            }
+            if (indices.isComplete()) {
                 break;
             }
             index++;
@@ -68,7 +80,7 @@ public:
     }
 
     bool isDeviceSuitable(vk::PhysicalDevice device) {
-        return findQueueFamilies(device).graphicsFamily.has_value();
+        return findQueueFamilies(device).isComplete();
     }
 
 #ifdef DEBUG
@@ -99,8 +111,17 @@ private:
 #ifdef DEBUG
         setupDebugMessenger();
 #endif
+        createSurface();
         pickPhysicalDevice();
         createLogicalDevice();
+    }
+
+    void createSurface() {
+        VkSurfaceKHR temporarySurface = static_cast<VkSurfaceKHR>(surface);
+        if (glfwCreateWindowSurface(instance, window, nullptr, &temporarySurface) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create window surface!");
+        }
+        surface = vk::SurfaceKHR(temporarySurface);
     }
 
     void pickPhysicalDevice() {
@@ -125,10 +146,16 @@ private:
 
     void createLogicalDevice() {
         QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+        std::vector<vk::DeviceQueueCreateInfo> queueCreateInfos;
+        std::set<uint32_t> uniqueQueueFamilies = {indices.graphicsFamily.value(), indices.presentFamily.value()};
         float queuePriority = 1.0f;
-        vk::DeviceQueueCreateInfo queueCreateInfo({}, indices.graphicsFamily.value(), 1, &queuePriority);
+        for (uint32_t queueFamilyIndex : uniqueQueueFamilies) {
+            vk::DeviceQueueCreateInfo queueCreateInfo({}, queueFamilyIndex, 1, &queuePriority);
+            queueCreateInfos.push_back(queueCreateInfo);
+        }
         vk::PhysicalDeviceFeatures deviceFeatures{};
-        vk::DeviceCreateInfo createInfo({}, 1, &queueCreateInfo,
+
+        vk::DeviceCreateInfo createInfo({}, static_cast<uint32_t>(queueCreateInfos.size()), queueCreateInfos.data(),
 #ifdef DEBUG 
                                         static_cast<uint32_t>(validationLayers.size()),
                                         validationLayers.data(),
@@ -141,6 +168,7 @@ private:
             throw std::runtime_error("Failed to create logical device!");
         }
         graphicsQueue = device.getQueue(indices.graphicsFamily.value(), 0);
+        presentQueue = device.getQueue(indices.presentFamily.value(), 0);
     }
 
     int rateDeviceSuitability(vk::PhysicalDevice device) {
@@ -247,6 +275,7 @@ private:
 #ifdef DEBUG
         instance.destroyDebugUtilsMessengerEXT(debugMessenger);
 #endif
+        instance.destroySurfaceKHR(surface);
         device.destroy();
         instance.destroy();
         glfwDestroyWindow(window);
@@ -257,11 +286,13 @@ private:
 
     vk::Instance instance;
     vk::DebugUtilsMessengerEXT debugMessenger;
+    vk::SurfaceKHR surface;
 
     vk::PhysicalDevice physicalDevice;
     vk::Device device;
 
     vk::Queue graphicsQueue;
+    vk::Queue presentQueue;
 };
 
 int main() {
