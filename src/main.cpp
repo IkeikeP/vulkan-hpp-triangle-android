@@ -35,8 +35,11 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
 
     return VK_FALSE;
 }
-
 #endif
+
+const std::vector<const char*> deviceExtensions = {
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME
+};
 
 class HelloTriangleApplication {
 public:
@@ -80,7 +83,16 @@ public:
     }
 
     bool isDeviceSuitable(vk::PhysicalDevice device) {
-        return findQueueFamilies(device).isComplete();
+        return findQueueFamilies(device).isComplete() && checkDeviceExtensionSupport(device);
+    }
+
+    bool checkDeviceExtensionSupport(vk::PhysicalDevice device) {
+        auto availableExtensions = device.enumerateDeviceExtensionProperties();
+        std::set<std::string> requiredExtensions(deviceExtensions.begin(), deviceExtensions.end());
+        for (const auto& extension : availableExtensions) {
+            requiredExtensions.erase(extension.extensionName);
+        }
+        return requiredExtensions.empty();
     }
 
 #ifdef DEBUG
@@ -157,11 +169,11 @@ private:
 
         vk::DeviceCreateInfo createInfo({}, static_cast<uint32_t>(queueCreateInfos.size()), queueCreateInfos.data(),
 #ifdef DEBUG 
-                                        static_cast<uint32_t>(validationLayers.size()),
+                                        static_cast<uint32_t>(validationLayers.size()), //TODO merge validation layers with deviceExtensions
                                         validationLayers.data(),
 #else
-                                        0,
-                                        {},
+                                        static_cast<uint32_t>(deviceExtensions.size()),
+                                        deviceExtensions.data(),
 #endif
                                         {}, {}, &deviceFeatures);
         if (physicalDevice.createDevice(&createInfo, nullptr, &device) != vk::Result::eSuccess) {
