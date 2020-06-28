@@ -115,6 +115,20 @@ public:
         return requiredExtensions.empty();
     }
 
+    vk::SurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats)
+    {
+        for (const auto& availableFormat : availableFormats)
+        {
+            if (availableFormat.format == vk::Format::eB8G8R8A8Srgb
+                && availableFormat.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
+                return availableFormat;
+            }
+        }
+        // we could start ranking the available formats based on how "good" they are, 
+        // but in most cases it's okay to just settle with the first format that is specified.
+        return availableFormats[0];
+    }
+
 #ifdef DEBUG
     bool checkValidationLayerSupport() {
         uint32_t layerCount;
