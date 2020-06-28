@@ -82,8 +82,28 @@ public:
         return indices;
     }
 
+    struct SwapChainSupportDetails {
+        vk::SurfaceCapabilitiesKHR capabilities;
+        std::vector<vk::SurfaceFormatKHR> formats;
+        std::vector<vk::PresentModeKHR> presentModes;
+    };
+
+    SwapChainSupportDetails querySwapChainSupport(vk::PhysicalDevice device) {
+        SwapChainSupportDetails details;
+        details.capabilities = device.getSurfaceCapabilitiesKHR(surface);
+        details.formats = device.getSurfaceFormatsKHR(surface);
+        details.presentModes = device.getSurfacePresentModesKHR(surface);
+        return details;
+    }
+
+    bool isSwapChainSupportSufficient(vk::PhysicalDevice device) {
+        auto swapChainSupportDetails = querySwapChainSupport(device);
+        return !swapChainSupportDetails.formats.empty() && !swapChainSupportDetails.presentModes.empty();
+    }
+
     bool isDeviceSuitable(vk::PhysicalDevice device) {
-        return findQueueFamilies(device).isComplete() && checkDeviceExtensionSupport(device);
+        // Note: only check for swap chain support after verifying that the extension is avaible, therefore order must be kept
+        return findQueueFamilies(device).isComplete() && checkDeviceExtensionSupport(device) && isSwapChainSupportSufficient(device);
     }
 
     bool checkDeviceExtensionSupport(vk::PhysicalDevice device) {
