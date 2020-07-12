@@ -201,15 +201,15 @@ private:
         }
         vk::PhysicalDeviceFeatures deviceFeatures{};
 
-        vk::DeviceCreateInfo createInfo({}, static_cast<uint32_t>(queueCreateInfos.size()), queueCreateInfos.data(),
-#ifdef DEBUG 
-                                        static_cast<uint32_t>(validationLayers.size()), //TODO merge validation layers with deviceExtensions
-                                        validationLayers.data(),
-#else
-                                        static_cast<uint32_t>(deviceExtensions.size()),
-                                        deviceExtensions.data(),
-#endif
-                                        {}, {}, &deviceFeatures);
+        vk::DeviceCreateInfo createInfo{};
+        createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
+        createInfo.pQueueCreateInfos = queueCreateInfos.data();
+        createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
+        createInfo.ppEnabledLayerNames = validationLayers.data();
+        createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
+        createInfo.ppEnabledExtensionNames = deviceExtensions.data();
+        createInfo.pEnabledFeatures = &deviceFeatures;
+        
         if (physicalDevice.createDevice(&createInfo, nullptr, &device) != vk::Result::eSuccess) {
             throw std::runtime_error("Failed to create logical device!");
         }
