@@ -185,6 +185,7 @@ private:
         pickPhysicalDevice();
         createLogicalDevice();
         createSwapChain();
+        createImageViews();
     }
 
     void createSurface() {
@@ -291,6 +292,26 @@ private:
         swapChainExtent = extent;
     }
 
+    void createImageViews() {
+        swapChainImageViews.resize(swapChainImages.size());
+        for (size_t i = 0; i < swapChainImages.size(); i++) {
+            vk::ImageViewCreateInfo createInfo{};
+            createInfo.image = swapChainImages[i];
+            createInfo.viewType = vk::ImageViewType::e2D;
+            createInfo.format = swapChainImageFormat;
+            createInfo.components.r = vk::ComponentSwizzle::eIdentity;
+            createInfo.components.g = vk::ComponentSwizzle::eIdentity;
+            createInfo.components.b = vk::ComponentSwizzle::eIdentity;
+            createInfo.components.a = vk::ComponentSwizzle::eIdentity;
+            createInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+            createInfo.subresourceRange.baseMipLevel = 0;
+            createInfo.subresourceRange.levelCount = 1;
+            createInfo.subresourceRange.baseArrayLayer = 0; // only relevant for stereographic apps
+            createInfo.subresourceRange.layerCount = 1; // only relevant for stereographic apps
+            swapChainImageViews[i] = device.createImageView(createInfo);
+        }
+    }
+
     int rateDeviceSuitability(vk::PhysicalDevice device) {
         auto features = device.getFeatures();
         if (!features.geometryShader || !isDeviceSuitable(device))
@@ -395,6 +416,9 @@ private:
 #ifdef DEBUG
         instance.destroyDebugUtilsMessengerEXT(debugMessenger);
 #endif
+        for (auto imageView : swapChainImageViews) {
+            device.destroyImageView(imageView);
+        }
         device.destroySwapchainKHR(swapchain);
         instance.destroySurfaceKHR(surface);
         device.destroy();
@@ -419,6 +443,7 @@ private:
     std::vector<vk::Image> swapChainImages;
     vk::Format swapChainImageFormat;
     vk::Extent2D swapChainExtent;
+    std::vector<vk::ImageView> swapChainImageViews;
 };
 
 int main() {
