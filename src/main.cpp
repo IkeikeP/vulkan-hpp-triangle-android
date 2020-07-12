@@ -285,6 +285,10 @@ private:
         createInfo.clipped = true;
         createInfo.oldSwapchain = nullptr;
         swapchain = device.createSwapchainKHR(createInfo);
+
+        swapChainImages = device.getSwapchainImagesKHR(swapchain);
+        swapChainImageFormat = surfaceFormat.format;
+        swapChainExtent = extent;
     }
 
     int rateDeviceSuitability(vk::PhysicalDevice device) {
@@ -412,6 +416,9 @@ private:
     vk::Queue presentQueue;
 
     vk::SwapchainKHR swapchain;
+    std::vector<vk::Image> swapChainImages;
+    vk::Format swapChainImageFormat;
+    vk::Extent2D swapChainExtent;
 };
 
 int main() {
