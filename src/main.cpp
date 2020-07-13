@@ -12,8 +12,17 @@
 #include <optional>
 #include <set>
 #include <cstdint>
+#include <fstream>
 #ifdef DEBUG
 #include <magic_enum.hpp>
+#endif
+#ifdef WIN32
+#include <Windows.h>
+#include <mutex>
+#elif defined(__linux__) && !defined(__ANDROID__)
+#include <limits.h>
+#include <unistd.h>
+#include <mutex>
 #endif
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
@@ -186,6 +195,7 @@ private:
         createLogicalDevice();
         createSwapChain();
         createImageViews();
+        createGraphicsPipeline();
     }
 
     void createSurface() {
@@ -310,6 +320,85 @@ private:
             createInfo.subresourceRange.layerCount = 1; // only relevant for stereographic apps
             swapChainImageViews[i] = device.createImageView(createInfo);
         }
+    }
+
+    void createGraphicsPipeline() {
+        auto vertShaderCode = readFile(getShaderPath() + "/shader.vert.spv");
+        auto fragShaderCode = readFile(getShaderPath() + "/shader.frag.spv");
+        auto vertShaderModule = createShaderModule(vertShaderCode);
+        auto fragShaderModule = createShaderModule(fragShaderCode);
+
+        vk::PipelineShaderStageCreateInfo vertShaderStageInfo{};
+        vertShaderStageInfo.stage = vk::ShaderStageFlagBits::eVertex;
+        vertShaderStageInfo.module = vertShaderModule;
+        vertShaderStageInfo.pName = "main";
+
+        vk::PipelineShaderStageCreateInfo fragShaderStageInfo{};
+        fragShaderStageInfo.stage = vk::ShaderStageFlagBits::eFragment;
+        fragShaderStageInfo.module = fragShaderModule;
+        fragShaderStageInfo.pName = "main";
+
+        vk::PipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
+
+        device.destroyShaderModule(vertShaderModule);
+        device.destroyShaderModule(fragShaderModule);
+    }
+
+    static std::vector<char> readFile(const std::string& filename) {
+        std::ifstream file(filename, std::ios::ate | std::ios::binary);
+            
+        if (!file.is_open()) {
+            throw std::runtime_error("failed to open file!");
+        }
+
+        size_t fileSize = (size_t) file.tellg();
+        std::vector<char> buffer(fileSize);
+
+        file.seekg(0);
+        file.read(buffer.data(), fileSize);
+        file.close();
+        return buffer;
+    }
+
+    static std::string getShaderPath() {
+        return getExecutablePath() + "/shaders";
+    }
+
+    static std::string getExecutablePath() {
+#if defined(_WIN32)
+        static std::string path;
+        static std::once_flag once;
+        std::call_once(once, []{
+            char result[MAX_PATH];
+            std::string execPath(result, GetModuleFileName(nullptr, result, MAX_PATH));
+            std::replace(execPath.begin(), execPath.end(), '\\', '/');
+            std::string::size_type lastSlash = execPath.rfind("/");
+            path = execPath.substr(0, lastSlash);
+        });
+        return path;
+#elif defined(__linux__) && !defined(__ANDROID__)
+        static std::string path;
+        static std::once_flag once;
+        std::call_once(once, []{
+            char result[PATH_MAX];
+            ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
+            return std::string execPath(result, (count > 0) ? count : 0);
+            std::replace(execPath.begin(), execPath.end(), '\\', '/');
+            std::string::size_type lastSlash = execPath.rfind("/");
+            path = execPath.substr(0, lastSlash);
+        });
+        return path;
+#else
+        static const std::string empty;
+        return empty;
+#endif
+    }
+
+    vk::ShaderModule createShaderModule(const std::vector<char>& code) {
+        vk::ShaderModuleCreateInfo createInfo{};
+        createInfo.codeSize = code.size();
+        createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
+        return device.createShaderModule(createInfo);
     }
 
     int rateDeviceSuitability(vk::PhysicalDevice device) {
