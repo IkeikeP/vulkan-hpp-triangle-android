@@ -195,6 +195,7 @@ private:
         createLogicalDevice();
         createSwapChain();
         createImageViews();
+        createRenderPass();
         createGraphicsPipeline();
     }
 
@@ -320,6 +321,32 @@ private:
             createInfo.subresourceRange.layerCount = 1; // only relevant for stereographic apps
             swapChainImageViews[i] = device.createImageView(createInfo);
         }
+    }
+
+    void createRenderPass() {
+        vk::AttachmentDescription colorAttachment{};
+        colorAttachment.setFormat(swapChainImageFormat)
+            .setSamples(vk::SampleCountFlagBits::e1)   // Not using multisampling yet
+            .setLoadOp(vk::AttachmentLoadOp::eClear)   // clear operation to clear the framebuffer to black before drawing a new frame
+            .setStoreOp(vk::AttachmentStoreOp::eStore) // Rendered contents will be stored in memory and can be read later
+            .setInitialLayout(vk::ImageLayout::eUndefined) // The caveat of this special value is that the contents of the image are not guaranteed to be preserved, but that doesn't matter since we're going to clear it anyway.
+            .setFinalLayout(vk::ImageLayout::ePresentSrcKHR); //  We want the image to be ready for presentation using the swap chain after rendering
+
+        vk::AttachmentReference colorAttachmentRef{};
+        colorAttachmentRef.setAttachment(0) // Our array consists of a single VkAttachmentDescription, so its index is 0
+            .setLayout(vk::ImageLayout::eColorAttachmentOptimal); // use the attachment to function as a color buffer
+
+        vk::SubpassDescription subpass{};
+        subpass.setPipelineBindPoint(vk::PipelineBindPoint::eGraphics) // may also support compute subpasses in the future, so we have to be explicit about this being a graphics subpass
+            .setColorAttachmentCount(1)
+            .setPColorAttachments(&colorAttachmentRef); // The index of the attachment in this array is directly referenced from the fragment shader with the layout(location = 0) out vec4 outColor directive!
+
+        vk::RenderPassCreateInfo renderPassInfo{};
+        renderPassInfo.setAttachmentCount(1)
+            .setPAttachments(&colorAttachment)
+            .setSubpassCount(1)
+            .setPSubpasses(&subpass);
+        renderPass = device.createRenderPass(renderPassInfo);
     }
 
     void createGraphicsPipeline() {
@@ -592,16 +619,17 @@ private:
     }
 
     void cleanup() {
-#ifdef DEBUG
-        instance.destroyDebugUtilsMessengerEXT(debugMessenger);
-#endif
         device.destroyPipelineLayout(pipelineLayout);
+        device.destroyRenderPass(renderPass);
         for (auto imageView : swapChainImageViews) {
             device.destroyImageView(imageView);
         }
         device.destroySwapchainKHR(swapchain);
         instance.destroySurfaceKHR(surface);
         device.destroy();
+#ifdef DEBUG
+        instance.destroyDebugUtilsMessengerEXT(debugMessenger);
+#endif
         instance.destroy();
         glfwDestroyWindow(window);
         glfwTerminate();
@@ -625,6 +653,7 @@ private:
     vk::Extent2D swapChainExtent;
     std::vector<vk::ImageView> swapChainImageViews;
 
+    vk::RenderPass renderPass;
     vk::PipelineLayout pipelineLayout;
 };
 
