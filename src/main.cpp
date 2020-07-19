@@ -340,6 +340,96 @@ private:
 
         vk::PipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
 
+        vk::PipelineVertexInputStateCreateInfo vertexInputInfo{};
+        vertexInputInfo.setVertexBindingDescriptionCount(0)
+                       .setVertexAttributeDescriptionCount(0);
+        vertexInputInfo.pVertexBindingDescriptions = nullptr;
+        vertexInputInfo.pVertexAttributeDescriptions = nullptr;
+
+        vk::PipelineInputAssemblyStateCreateInfo inputAssembly{};
+        inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
+        inputAssembly.primitiveRestartEnable = false;
+
+        vk::Viewport viewport{};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = (float)swapChainExtent.width;
+        viewport.height = (float)swapChainExtent.height;
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+
+        vk::Rect2D scissor({0, 0}, swapChainExtent);
+
+        vk::PipelineViewportStateCreateInfo viewportState({}, 1, &viewport, 1, &scissor);
+
+        vk::PipelineRasterizationStateCreateInfo rasterizer{};
+        rasterizer.setDepthClampEnable(false) // fragments that are beyond the near and far planes are clamped to them
+            .setRasterizerDiscardEnable(false) // if true geometry never passes through the rasterizer stage. This basically disables any output to the framebuffer
+            .setPolygonMode(vk::PolygonMode::eFill) // Using any mode other than fill requires enabling a GPU feature.
+            .setLineWidth(1.0f)
+            .setCullMode(vk::CullModeFlagBits::eBack)
+            .setFrontFace(vk::FrontFace::eClockwise)
+            .setDepthBiasEnable(false) //to alter the depth values by adding a constant value or biasing them based on a fragment's slope. This is sometimes used for shadow mapping.
+            .setDepthBiasConstantFactor(0.0f)
+            .setDepthBiasClamp(0.0f)
+            .setDepthBiasSlopeFactor(0.0f);
+
+        vk::PipelineMultisampleStateCreateInfo multisampling{};
+        multisampling.setSampleShadingEnable(false) // configures multisampling, which is one of the ways to perform anti-aliasing
+            .setRasterizationSamples(vk::SampleCountFlagBits::e1)
+            .setMinSampleShading(1.0f)
+            .setPSampleMask(nullptr)
+            .setAlphaToCoverageEnable(false)
+            .setAlphaToOneEnable(false);
+
+        //TODO: Depth and stencial testing
+
+        // color blending settings per framebuffer
+        vk::PipelineColorBlendAttachmentState colorBlendAttachment{};
+        colorBlendAttachment.setColorWriteMask(vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+                                               vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA)
+            .setBlendEnable(false)
+            .setSrcColorBlendFactor(vk::BlendFactor::eOne)
+            .setDstColorBlendFactor(vk::BlendFactor::eZero)
+            .setColorBlendOp(vk::BlendOp::eAdd)
+            .setSrcAlphaBlendFactor(vk::BlendFactor::eOne)
+            .setDstAlphaBlendFactor(vk::BlendFactor::eZero)
+            .setAlphaBlendOp(vk::BlendOp::eAdd);
+        // Pseudocode for color blending:
+        // if (blendEnable) {
+        //     finalColor.rgb = (srcColorBlendFactor * newColor.rgb) <colorBlendOp> (dstColorBlendFactor * oldColor.rgb);
+        //     finalColor.a = (srcAlphaBlendFactor * newColor.a) <alphaBlendOp> (dstAlphaBlendFactor * oldColor.a);
+        // } else {
+        //     finalColor = newColor;
+        // }
+        // finalColor = finalColor & colorWriteMask;
+
+        // global color blending settings -> for all framebuffers
+        vk::PipelineColorBlendStateCreateInfo colorBlending{};
+        colorBlending.setLogicOpEnable(false)
+            .setLogicOp(vk::LogicOp::eCopy)
+            .setAttachmentCount(1)
+            .setPAttachments(&colorBlendAttachment)
+            .setBlendConstants({0.0f, 0.0f, 0.0f, 0.0f});
+
+        vk::DynamicState dynamicStates[] = {
+            vk::DynamicState::eViewport,
+            vk::DynamicState::eLineWidth
+        };
+        vk::PipelineDynamicStateCreateInfo dynamicState{};
+        dynamicState.setDynamicStateCount(2)
+            .setPDynamicStates(dynamicStates);
+
+        // for uniform values in shaders
+        // The structure also specifies push constants, 
+        // which are another way of passing dynamic values to shaders.
+        vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
+        pipelineLayoutInfo.setSetLayoutCount(0)
+            .setPSetLayouts(nullptr)
+            .setPushConstantRangeCount(0)
+            .setPPushConstantRanges(nullptr);
+        pipelineLayout = device.createPipelineLayout(pipelineLayoutInfo);
+
         device.destroyShaderModule(vertShaderModule);
         device.destroyShaderModule(fragShaderModule);
     }
@@ -505,6 +595,7 @@ private:
 #ifdef DEBUG
         instance.destroyDebugUtilsMessengerEXT(debugMessenger);
 #endif
+        device.destroyPipelineLayout(pipelineLayout);
         for (auto imageView : swapChainImageViews) {
             device.destroyImageView(imageView);
         }
@@ -533,6 +624,8 @@ private:
     vk::Format swapChainImageFormat;
     vk::Extent2D swapChainExtent;
     std::vector<vk::ImageView> swapChainImageViews;
+
+    vk::PipelineLayout pipelineLayout;
 };
 
 int main() {
