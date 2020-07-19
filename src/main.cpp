@@ -457,6 +457,28 @@ private:
             .setPPushConstantRanges(nullptr);
         pipelineLayout = device.createPipelineLayout(pipelineLayoutInfo);
 
+        vk::GraphicsPipelineCreateInfo pipelineInfo{};
+        pipelineInfo.setStageCount(2)
+            .setPStages(shaderStages)
+            .setPVertexInputState(&vertexInputInfo)
+            .setPInputAssemblyState(&inputAssembly)
+            .setPViewportState(&viewportState)
+            .setPRasterizationState(&rasterizer)
+            .setPMultisampleState(&multisampling)
+            .setPDepthStencilState(nullptr)
+            .setPColorBlendState(&colorBlending)
+            .setPDynamicState(nullptr)
+            .setLayout(pipelineLayout)
+            .setRenderPass(renderPass) // It is also possible to use other render passes with this pipeline instead of this specific instance, but they have to be compatible
+            .setSubpass(0)             // index of the sub pass where this graphics pipeline will be used
+            // Vulkan allows you to create a new graphics pipeline by deriving from an existing pipeline.
+            // The idea of pipeline derivatives is that it is less expensive to set up pipelines when they have much functionality
+            // in common with an existing pipeline and switching between pipelines from the same parent can also be done quicker
+            .setBasePipelineHandle(nullptr)
+            .setBasePipelineIndex(-1);
+
+        graphicsPipeline = device.createGraphicsPipeline({}, pipelineInfo);
+
         device.destroyShaderModule(vertShaderModule);
         device.destroyShaderModule(fragShaderModule);
     }
@@ -619,6 +641,7 @@ private:
     }
 
     void cleanup() {
+        device.destroyPipeline(graphicsPipeline);
         device.destroyPipelineLayout(pipelineLayout);
         device.destroyRenderPass(renderPass);
         for (auto imageView : swapChainImageViews) {
@@ -655,6 +678,7 @@ private:
 
     vk::RenderPass renderPass;
     vk::PipelineLayout pipelineLayout;
+    vk::Pipeline graphicsPipeline;
 };
 
 int main() {
