@@ -197,6 +197,7 @@ private:
         createImageViews();
         createRenderPass();
         createGraphicsPipeline();
+        createFramebuffers();
     }
 
     void createSurface() {
@@ -483,6 +484,22 @@ private:
         device.destroyShaderModule(fragShaderModule);
     }
 
+    void createFramebuffers() {
+        swapChainFramebuffers.resize(swapChainImageViews.size());
+        for (size_t index = 0; index < swapChainImageViews.size(); index++)
+        {
+            vk::ImageView attachments[] = { swapChainImageViews[index] };
+            vk::FramebufferCreateInfo frameBufferInfo{};
+            frameBufferInfo.setRenderPass(renderPass) // specify with which renderPass needs to be compatible
+                .setAttachmentCount(1)
+                .setPAttachments(attachments)
+                .setWidth(swapChainExtent.width)
+                .setHeight(swapChainExtent.height)
+                .setLayers(1); // Our swap chain images are single images, so the number of layers is 1
+            swapChainFramebuffers[index] = device.createFramebuffer(frameBufferInfo);
+        }
+    }
+
     static std::vector<char> readFile(const std::string& filename) {
         std::ifstream file(filename, std::ios::ate | std::ios::binary);
             
@@ -641,6 +658,9 @@ private:
     }
 
     void cleanup() {
+        for (auto framebuffer : swapChainFramebuffers) {
+            device.destroyFramebuffer(framebuffer);
+        }
         device.destroyPipeline(graphicsPipeline);
         device.destroyPipelineLayout(pipelineLayout);
         device.destroyRenderPass(renderPass);
@@ -679,6 +699,7 @@ private:
     vk::RenderPass renderPass;
     vk::PipelineLayout pipelineLayout;
     vk::Pipeline graphicsPipeline;
+    std::vector<vk::Framebuffer> swapChainFramebuffers;
 };
 
 int main() {
