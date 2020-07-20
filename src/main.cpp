@@ -200,6 +200,7 @@ private:
         createFramebuffers();
         createCommandPool();
         createCommandBuffers();
+        createSemaphores();
     }
 
     void createSurface() {
@@ -344,11 +345,22 @@ private:
             .setColorAttachmentCount(1)
             .setPColorAttachments(&colorAttachmentRef); // The index of the attachment in this array is directly referenced from the fragment shader with the layout(location = 0) out vec4 outColor directive!
 
+        vk::SubpassDependency dependency{};
+        dependency.setSrcSubpass(VK_SUBPASS_EXTERNAL) // VK_SUBPASS_EXTERNAL means anything outside of a given render pass scope, it specifies anything that happened before the render pass
+            .setDstSubpass(0) //subpass index
+            //The next two fields specify the operations to wait on and the stages in which these operations occur
+            .setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
+            //.setSrcAccessMask(0)
+            .setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
+            .setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite);
+
         vk::RenderPassCreateInfo renderPassInfo{};
         renderPassInfo.setAttachmentCount(1)
             .setPAttachments(&colorAttachment)
             .setSubpassCount(1)
-            .setPSubpasses(&subpass);
+            .setPSubpasses(&subpass)
+            .setDependencyCount(1)
+            .setPDependencies(&dependency);
         renderPass = device.createRenderPass(renderPassInfo);
     }
 
@@ -550,6 +562,12 @@ private:
 
     }
 
+    void createSemaphores() {
+        vk::SemaphoreCreateInfo semaphoreInfo{};
+        imageAvailableSemaphore = device.createSemaphore(semaphoreInfo);
+        renderFinishedSemaphore = device.createSemaphore(semaphoreInfo);
+    }
+
     static std::vector<char> readFile(const std::string& filename) {
         std::ifstream file(filename, std::ios::ate | std::ios::binary);
             
@@ -628,7 +646,45 @@ private:
     void mainLoop() {
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
+            drawFrame();
         }
+        device.waitIdle();
+    }
+
+    void drawFrame() {
+        uint32_t imageIndex;
+        auto resultValue = device.acquireNextImageKHR(swapchain, UINT64_MAX, imageAvailableSemaphore, nullptr);
+        imageIndex = resultValue.value;
+        vk::SubmitInfo submitInfo{};
+        vk::Semaphore waitSemaphores[] = {imageAvailableSemaphore};
+        vk::PipelineStageFlags waitStages(vk::PipelineStageFlagBits::eColorAttachmentOutput);
+        // Specify which semaphores to wait on before execution begins and in which stage(s) of the pipeline to wait
+        vk::Semaphore signalSemaphores[] = {renderFinishedSemaphore};
+        submitInfo.setWaitSemaphoreCount(1)
+            .setPWaitSemaphores(waitSemaphores)
+            .setPWaitDstStageMask(&waitStages)
+            .setCommandBufferCount(1)
+            .setPCommandBuffers(&commandBuffers[imageIndex])
+            .setSignalSemaphoreCount(1)
+            .setPSignalSemaphores(signalSemaphores);
+
+        graphicsQueue.submit(1, &submitInfo, nullptr);
+
+        vk::SwapchainKHR swapChains[] = {swapchain};
+        vk::PresentInfoKHR presentInfo{};
+        presentInfo.setWaitSemaphoreCount(1)
+            .setPWaitSemaphores(signalSemaphores)
+            .setSwapchainCount(1)
+            .setPSwapchains(swapChains)
+            .setPImageIndices(&imageIndex)
+            .setPResults(nullptr); // only relevant for multiple swapchains
+
+        presentQueue.presentKHR(&presentInfo);
+
+        // The reason for waitIdle is that the application is rapidly submitting work in the drawFrame function, but doesn't actually check if any of it finishes. 
+        // If the CPU is submitting work faster than the GPU can keep up with then the queue will slowly fill up with work. Worse, even, is that 
+        // we are reusing the imageAvailableSemaphore and renderFinishedSemaphore semaphores, along with the command buffers, for multiple frames at the same time!
+        presentQueue.waitIdle();
     }
 
     void createInstance() {
@@ -708,6 +764,8 @@ private:
     }
 
     void cleanup() {
+        vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
+        vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
         device.destroyCommandPool(commandPool);
         for (auto framebuffer : swapChainFramebuffers) {
             device.destroyFramebuffer(framebuffer);
@@ -754,6 +812,9 @@ private:
 
     vk::CommandPool commandPool;
     std::vector<vk::CommandBuffer> commandBuffers;
+
+    vk::Semaphore imageAvailableSemaphore;
+    vk::Semaphore renderFinishedSemaphore;
 };
 
 int main() {
