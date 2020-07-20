@@ -198,6 +198,8 @@ private:
         createRenderPass();
         createGraphicsPipeline();
         createFramebuffers();
+        createCommandPool();
+        createCommandBuffers();
     }
 
     void createSurface() {
@@ -500,6 +502,54 @@ private:
         }
     }
 
+    void createCommandPool() {
+        auto queueFamiliesIndices = findQueueFamilies(physicalDevice);
+        vk::CommandPoolCreateInfo poolInfo{};
+        poolInfo.setQueueFamilyIndex(queueFamiliesIndices.graphicsFamily.value());
+        commandPool = device.createCommandPool(poolInfo);
+    }
+
+    void createCommandBuffers() {
+        commandBuffers.resize(swapChainFramebuffers.size());
+        vk::CommandBufferAllocateInfo allocInfo{};
+        allocInfo.setCommandPool(commandPool)
+            .setLevel(vk::CommandBufferLevel::ePrimary)
+            .setCommandBufferCount((uint32_t)commandBuffers.size());
+        commandBuffers = device.allocateCommandBuffers(allocInfo);
+        // CBLevel::ePrimary: Can be submitted to a queue for execution, but cannot be called from other command buffers.
+        // CBLevel::eSecondary: Cannot be submitted directly, but can be called from primary command buffers.
+        for (size_t index = 0; index < commandBuffers.size(); index++) {
+            vk::CommandBufferBeginInfo beginInfo{};
+            // eOneTimeSubmit: specifies that each recording of the command buffer will only be submitted once, and the command buffer will be reset and recorded again between each submission
+            // eRenderPassContinue: This is a secondary command buffer that will be entirely within a single render pass.
+            // eSimultaneousUse: The command buffer can be resubmitted while it is also already pending execution.
+            // None of these flags are applicable for us right now.
+            commandBuffers[index].begin(beginInfo);
+            
+            vk::RenderPassBeginInfo renderPassInfo{};
+            vk::ClearValue clearColor(std::array<float, 4> {0.0f, 0.0f, 0.0f, 1.0f});
+            renderPassInfo.setRenderPass(renderPass)
+                .setFramebuffer(swapChainFramebuffers[index])
+                .setRenderArea({{0, 0}, swapChainExtent}) // Size of the render area. The render area defines where shader loads and stores will take place. It should match the size of the attachments for best performance
+                .setClearValueCount(1)
+                .setPClearValues(&clearColor); // clear values for AttachmentLoadOp::eClear
+            commandBuffers[index].beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+            // SubpassContents::eInline: The render pass commands will be embedded in the primary command buffer itself and no secondary command buffers will be executed.
+            // SubpassContents::eSecondaryCommandBuffers: The render pass commands will be executed from secondary command buffers.
+
+            commandBuffers[index].bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline); // first parameter specifies if is a graphics or compute pipeline
+            commandBuffers[index].draw(3, 1, 0, 0);            
+            // vertexCount: Even though we don't have a vertex buffer, we technically still have 3 vertices to draw.
+            // instanceCount: Used for instanced rendering, use 1 if you're not doing that.
+            // firstVertex: Used as an offset into the vertex buffer, defines the lowest value of gl_VertexIndex.
+            // firstInstance: Used as an offset for instanced rendering, defines the lowest value of gl_InstanceIndex.
+
+            commandBuffers[index].endRenderPass();
+            commandBuffers[index].end();
+        }
+
+    }
+
     static std::vector<char> readFile(const std::string& filename) {
         std::ifstream file(filename, std::ios::ate | std::ios::binary);
             
@@ -658,6 +708,7 @@ private:
     }
 
     void cleanup() {
+        device.destroyCommandPool(commandPool);
         for (auto framebuffer : swapChainFramebuffers) {
             device.destroyFramebuffer(framebuffer);
         }
@@ -695,11 +746,14 @@ private:
     vk::Format swapChainImageFormat;
     vk::Extent2D swapChainExtent;
     std::vector<vk::ImageView> swapChainImageViews;
+    std::vector<vk::Framebuffer> swapChainFramebuffers;
 
     vk::RenderPass renderPass;
     vk::PipelineLayout pipelineLayout;
     vk::Pipeline graphicsPipeline;
-    std::vector<vk::Framebuffer> swapChainFramebuffers;
+
+    vk::CommandPool commandPool;
+    std::vector<vk::CommandBuffer> commandBuffers;
 };
 
 int main() {
