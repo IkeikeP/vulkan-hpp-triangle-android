@@ -29,6 +29,7 @@ VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
 static constexpr int k_width = 800;
 static constexpr int k_height = 600;
+const int MAX_FRAMES_IN_FLIGHT = 2;
 
 #define LOG(x) std::cout << x << std::endl;
 
@@ -200,7 +201,7 @@ private:
         createFramebuffers();
         createCommandPool();
         createCommandBuffers();
-        createSemaphores();
+        createSyncObjects();
     }
 
     void createSurface() {
@@ -559,13 +560,22 @@ private:
             commandBuffers[index].endRenderPass();
             commandBuffers[index].end();
         }
-
     }
 
-    void createSemaphores() {
+    void createSyncObjects() {
+        imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+        renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+        inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
+        imagesInFlight.resize(swapChainImages.size(), nullptr);
         vk::SemaphoreCreateInfo semaphoreInfo{};
-        imageAvailableSemaphore = device.createSemaphore(semaphoreInfo);
-        renderFinishedSemaphore = device.createSemaphore(semaphoreInfo);
+        vk::FenceCreateInfo fenceInfo{};
+        fenceInfo.setFlags(vk::FenceCreateFlagBits::eSignaled);
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+            imageAvailableSemaphores[i] = device.createSemaphore(semaphoreInfo);
+            renderFinishedSemaphores[i] = device.createSemaphore(semaphoreInfo);
+            inFlightFences[i] = device.createFence(fenceInfo);
+        }
+
     }
 
     static std::vector<char> readFile(const std::string& filename) {
@@ -652,14 +662,23 @@ private:
     }
 
     void drawFrame() {
+        device.waitForFences(1, &inFlightFences[currentFrame], true, UINT64_MAX);
         uint32_t imageIndex;
-        auto resultValue = device.acquireNextImageKHR(swapchain, UINT64_MAX, imageAvailableSemaphore, nullptr);
+
+        auto resultValue = device.acquireNextImageKHR(swapchain, UINT64_MAX, imageAvailableSemaphores[currentFrame], nullptr);
         imageIndex = resultValue.value;
+        // Check if a previous frame is using this image (i.e. there is its fence to wait on)
+        if (imagesInFlight[imageIndex]) {
+            device.waitForFences(1, &imagesInFlight[imageIndex], true, UINT64_MAX);
+        }
+        // Mark the image as now being in use by this frame
+        imagesInFlight[imageIndex] = inFlightFences[currentFrame];
+
         vk::SubmitInfo submitInfo{};
-        vk::Semaphore waitSemaphores[] = {imageAvailableSemaphore};
+        vk::Semaphore waitSemaphores[] = {imageAvailableSemaphores[currentFrame]};
         vk::PipelineStageFlags waitStages(vk::PipelineStageFlagBits::eColorAttachmentOutput);
         // Specify which semaphores to wait on before execution begins and in which stage(s) of the pipeline to wait
-        vk::Semaphore signalSemaphores[] = {renderFinishedSemaphore};
+        vk::Semaphore signalSemaphores[] = {renderFinishedSemaphores[currentFrame]};
         submitInfo.setWaitSemaphoreCount(1)
             .setPWaitSemaphores(waitSemaphores)
             .setPWaitDstStageMask(&waitStages)
@@ -668,7 +687,9 @@ private:
             .setSignalSemaphoreCount(1)
             .setPSignalSemaphores(signalSemaphores);
 
-        graphicsQueue.submit(1, &submitInfo, nullptr);
+        device.resetFences(1, &inFlightFences[currentFrame]);
+
+        graphicsQueue.submit(1, &submitInfo, inFlightFences[currentFrame]);
 
         vk::SwapchainKHR swapChains[] = {swapchain};
         vk::PresentInfoKHR presentInfo{};
@@ -681,10 +702,7 @@ private:
 
         presentQueue.presentKHR(&presentInfo);
 
-        // The reason for waitIdle is that the application is rapidly submitting work in the drawFrame function, but doesn't actually check if any of it finishes. 
-        // If the CPU is submitting work faster than the GPU can keep up with then the queue will slowly fill up with work. Worse, even, is that 
-        // we are reusing the imageAvailableSemaphore and renderFinishedSemaphore semaphores, along with the command buffers, for multiple frames at the same time!
-        presentQueue.waitIdle();
+        currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
     }
 
     void createInstance() {
@@ -764,8 +782,11 @@ private:
     }
 
     void cleanup() {
-        vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
-        vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+            device.destroySemaphore(renderFinishedSemaphores[i]);
+            device.destroySemaphore(imageAvailableSemaphores[i]);
+            device.destroyFence(inFlightFences[i]);
+        }
         device.destroyCommandPool(commandPool);
         for (auto framebuffer : swapChainFramebuffers) {
             device.destroyFramebuffer(framebuffer);
@@ -813,8 +834,12 @@ private:
     vk::CommandPool commandPool;
     std::vector<vk::CommandBuffer> commandBuffers;
 
-    vk::Semaphore imageAvailableSemaphore;
-    vk::Semaphore renderFinishedSemaphore;
+    std::vector<vk::Semaphore> imageAvailableSemaphores;
+    std::vector<vk::Semaphore> renderFinishedSemaphores;
+    std::vector<vk::Fence> inFlightFences;
+    std::vector<vk::Fence> imagesInFlight;
+    
+    size_t currentFrame = 0;
 };
 
 int main() {
