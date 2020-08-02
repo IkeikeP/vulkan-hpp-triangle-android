@@ -425,7 +425,7 @@ private:
             .setAlphaToCoverageEnable(false)
             .setAlphaToOneEnable(false);
 
-        //TODO: Depth and stencial testing
+        //TODO: Depth and stencil testing
 
         // color blending settings per framebuffer
         vk::PipelineColorBlendAttachmentState colorBlendAttachment{};
@@ -665,6 +665,7 @@ private:
         device.waitForFences(1, &inFlightFences[currentFrame], true, UINT64_MAX);
         uint32_t imageIndex;
 
+        // acquireNextImageKHR will signal semaphore when complete
         auto resultValue = device.acquireNextImageKHR(swapchain, UINT64_MAX, imageAvailableSemaphores[currentFrame], nullptr);
         imageIndex = resultValue.value;
         // Check if a previous frame is using this image (i.e. there is its fence to wait on)
@@ -706,7 +707,6 @@ private:
     }
 
     void createInstance() {
-        using namespace vk;
         vk::DynamicLoader dl;
         PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
         VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
@@ -715,19 +715,19 @@ private:
             throw std::runtime_error("validation layers requested, but not available!");
         }
 #endif
-        const ApplicationInfo appInfo = getApplicationInfo();
+        const vk::ApplicationInfo appInfo = getApplicationInfo();
         auto extensions = getRequiredExtensions();
-        InstanceCreateInfo createInfo(vk::InstanceCreateFlags(), 
-                                      &appInfo,
+        vk::InstanceCreateInfo createInfo(vk::InstanceCreateFlags(), 
+                                          &appInfo,
 #ifdef DEBUG
-                                      static_cast<uint32_t>(validationLayers.size()),
-                                      validationLayers.data(),
+                                          static_cast<uint32_t>(validationLayers.size()),
+                                          validationLayers.data(),
 #else
-                                      0,
-                                      nullptr,
+                                          0,
+                                          nullptr,
 #endif
-                                      static_cast<uint32_t>(extensions.size()),
-                                      extensions.data());
+                                          static_cast<uint32_t>(extensions.size()),
+                                          extensions.data());
 #ifdef DEBUG
         vk::DebugUtilsMessengerCreateInfoEXT debugCreateInfo = createDebugMessenger();
         createInfo.setPNext(&debugCreateInfo);
