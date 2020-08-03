@@ -156,7 +156,9 @@ public:
         if (capabilities.currentExtent.width != UINT32_MAX) {
             return capabilities.currentExtent;
         } else {
-            vk::Extent2D actualExtent = {k_width, k_height};
+            int width, height;
+            glfwGetFramebufferSize(window, &width, &height);
+            vk::Extent2D actualExtent = {(uint32_t)width, (uint32_t)height};
             actualExtent.width = std::clamp(actualExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
             actualExtent.height = std::clamp(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
             return actualExtent;
@@ -649,8 +651,14 @@ private:
     void initWindow() {
         glfwInit();
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
         window = glfwCreateWindow(k_width, k_height, "Vulkan", nullptr, nullptr);
+        glfwSetWindowUserPointer(window, this);
+        glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+    }
+
+    static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
+        auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+        app->framebufferResized = true;
     }
 
     void mainLoop() {
@@ -661,20 +669,34 @@ private:
         device.waitIdle();
     }
 
+    void printImagesInFlight()
+    {
+        LOG("START")
+        for (int i = 0; i < imagesInFlight.size(); i++)
+        {
+            LOG(imagesInFlight[i]);
+        }
+        LOG("END");
+    }
+
     void drawFrame() {
         device.waitForFences(1, &inFlightFences[currentFrame], true, UINT64_MAX);
         uint32_t imageIndex;
 
         // acquireNextImageKHR will signal semaphore when complete
-        auto resultValue = device.acquireNextImageKHR(swapchain, UINT64_MAX, imageAvailableSemaphores[currentFrame], nullptr);
-        imageIndex = resultValue.value;
+        auto result = device.acquireNextImageKHR(swapchain, UINT64_MAX, imageAvailableSemaphores[currentFrame], nullptr);
+        if (result.result == vk::Result::eErrorOutOfDateKHR) {
+            recreateSwapChain();
+            return;
+        }
+        imageIndex = result.value;
         // Check if a previous frame is using this image (i.e. there is its fence to wait on)
         if (imagesInFlight[imageIndex]) {
             device.waitForFences(1, &imagesInFlight[imageIndex], true, UINT64_MAX);
         }
         // Mark the image as now being in use by this frame
         imagesInFlight[imageIndex] = inFlightFences[currentFrame];
-
+        printImagesInFlight();
         vk::SubmitInfo submitInfo{};
         vk::Semaphore waitSemaphores[] = {imageAvailableSemaphores[currentFrame]};
         vk::PipelineStageFlags waitStages(vk::PipelineStageFlagBits::eColorAttachmentOutput);
@@ -701,9 +723,33 @@ private:
             .setPImageIndices(&imageIndex)
             .setPResults(nullptr); // only relevant for multiple swapchains
 
-        presentQueue.presentKHR(&presentInfo);
-
+        auto presentResult = presentQueue.presentKHR(&presentInfo);
+        if (presentResult == vk::Result::eErrorOutOfDateKHR || presentResult == vk::Result::eSuboptimalKHR || framebufferResized) {
+            framebufferResized = false;
+            recreateSwapChain();
+            return;
+        }
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+    }
+
+    void recreateSwapChain()
+    {
+        int width = 0, height = 0;
+        glfwGetFramebufferSize(window, &width, &height);
+        while (width == 0 || height == 0) {
+            glfwGetFramebufferSize(window, &width, &height);
+            glfwWaitEvents();
+        }
+        vkDeviceWaitIdle(device);
+
+        cleanupSwapChain();
+
+        createSwapChain();
+        createImageViews();
+        createRenderPass();
+        createGraphicsPipeline();
+        createFramebuffers();
+        createCommandBuffers();
     }
 
     void createInstance() {
@@ -787,17 +833,8 @@ private:
             device.destroySemaphore(imageAvailableSemaphores[i]);
             device.destroyFence(inFlightFences[i]);
         }
+        cleanupSwapChain();
         device.destroyCommandPool(commandPool);
-        for (auto framebuffer : swapChainFramebuffers) {
-            device.destroyFramebuffer(framebuffer);
-        }
-        device.destroyPipeline(graphicsPipeline);
-        device.destroyPipelineLayout(pipelineLayout);
-        device.destroyRenderPass(renderPass);
-        for (auto imageView : swapChainImageViews) {
-            device.destroyImageView(imageView);
-        }
-        device.destroySwapchainKHR(swapchain);
         instance.destroySurfaceKHR(surface);
         device.destroy();
 #ifdef DEBUG
@@ -806,6 +843,21 @@ private:
         instance.destroy();
         glfwDestroyWindow(window);
         glfwTerminate();
+    }
+    
+    void cleanupSwapChain()
+    {
+        for (auto framebuffer : swapChainFramebuffers) {
+            device.destroyFramebuffer(framebuffer);
+        }
+        device.freeCommandBuffers(commandPool, commandBuffers);
+        device.destroyPipeline(graphicsPipeline);
+        device.destroyPipelineLayout(pipelineLayout);
+        device.destroyRenderPass(renderPass);
+        for (auto imageView : swapChainImageViews) {
+            device.destroyImageView(imageView);
+        }
+        device.destroySwapchainKHR(swapchain);
     }
     
     GLFWwindow* window;
@@ -840,6 +892,7 @@ private:
     std::vector<vk::Fence> imagesInFlight;
     
     size_t currentFrame = 0;
+    bool framebufferResized = false;
 };
 
 int main() {
