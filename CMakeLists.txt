@@ -37,11 +37,11 @@ else()
     message(FATAL_ERROR "Vulkan not found, please verify if Vulkan SDK is installed.")
 endif()
 
-# glfw
-set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-add_subdirectory(src/libs/glfw)
+# sdl
+#include_directories(src/libs/sdl/include)
+set(SDL_STATIC ON CACHE BOOL "" FORCE)
+set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+add_subdirectory(src/libs/sdl)
 
 # Debug
 if(CMAKE_BUILD_TYPE MATCHES Debug)
@@ -61,5 +61,6 @@ target_include_directories(${PROJECT_NAME}
 # Link libraries
 target_link_libraries(${PROJECT_NAME} 
     Vulkan::Vulkan
-    glfw
+    SDL2main
+    SDL2-static
 )

@@ -2,7 +2,8 @@
 #define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 #define NOMINMAX
 #include <vulkan/Vulkan.hpp>
-#include <GLFW/glfw3.h>
+#include "SDL.h"
+#include <SDL_vulkan.h>
 
 #include <algorithm>
 #include <iostream>
@@ -157,7 +158,7 @@ public:
             return capabilities.currentExtent;
         } else {
             int width, height;
-            glfwGetFramebufferSize(window, &width, &height);
+            SDL_GetWindowSize(window, &width, &height);
             vk::Extent2D actualExtent = {(uint32_t)width, (uint32_t)height};
             actualExtent.width = std::clamp(actualExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
             actualExtent.height = std::clamp(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
@@ -208,8 +209,11 @@ private:
 
     void createSurface() {
         VkSurfaceKHR temporarySurface = static_cast<VkSurfaceKHR>(surface);
-        if (glfwCreateWindowSurface(instance, window, nullptr, &temporarySurface) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create window surface!");
+
+        // Ask SDL to create a Vulkan surface from its window.
+        if (!SDL_Vulkan_CreateSurface(window, instance, &temporarySurface))
+        {
+            throw std::runtime_error("SDL could not create a Vulkan surface.");
         }
         surface = vk::SurfaceKHR(temporarySurface);
     }
@@ -649,21 +653,55 @@ private:
     }
 
     void initWindow() {
-        glfwInit();
-        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        window = glfwCreateWindow(k_width, k_height, "Vulkan", nullptr, nullptr);
-        glfwSetWindowUserPointer(window, this);
-        glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+        if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
+		    std::cerr << "Failed to initialize SDL:" << SDL_GetError() << std::endl;
+            throw std::runtime_error("Failed to initialize SDL!");
+	    }
+        window = SDL_CreateWindow(
+            "A Simple Triangle",
+            SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+            k_width, k_height,
+            SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN | SDL_WINDOW_ALLOW_HIGHDPI);
+
+        SDL_SetWindowFullscreen(window, SDL_FALSE);
     }
 
-    static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
-        auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
-        app->framebufferResized = true;
+    void onWindowResize() {
+        framebufferResized = true;
     }
 
     void mainLoop() {
-        while (!glfwWindowShouldClose(window)) {
-            glfwPollEvents();
+        while(true)
+        {
+            SDL_Event event;
+            // Each loop we will process any events that are waiting for us.
+            bool quit = false;
+            while (SDL_PollEvent(&event))
+            {
+                switch (event.type)
+                {
+                    case SDL_WINDOWEVENT:
+                        if (event.window.event == SDL_WINDOWEVENT_RESIZED)
+                        {
+                            onWindowResize();
+                        }
+                        break;
+
+                    case SDL_QUIT:
+                        quit = true;
+
+                    case SDL_KEYDOWN:
+                        if (event.key.keysym.sym == SDLK_ESCAPE)
+                        {
+                            quit = true;
+                        }
+                        break;
+                    default:
+                        break;
+                }
+            }
+            if (quit)
+                break;
             drawFrame();
         }
         device.waitIdle();
@@ -724,10 +762,10 @@ private:
     void recreateSwapChain()
     {
         int width = 0, height = 0;
-        glfwGetFramebufferSize(window, &width, &height);
-        while (width == 0 || height == 0) {
-            glfwGetFramebufferSize(window, &width, &height);
-            glfwWaitEvents();
+        SDL_GetWindowSize(window, &width, &height);
+        if (width == 0 || height == 0)
+        {
+            LOG("AAAA");
         }
         vkDeviceWaitIdle(device);
 
@@ -791,29 +829,34 @@ private:
     }
 
     std::vector<const char*> getRequiredExtensions() {
-        uint32_t extensionCount = 0, glfwExtensionCount = 0;
+        uint32_t extensionCount = 0;
         vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
         std::vector<VkExtensionProperties> availableExtensions(extensionCount);
         vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, availableExtensions.data());
-        const char** glfwExtensions;
-        glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-        std::cout << "Extensions:" << glfwExtensionCount << std::endl;
+            
+        uint32_t sdlExtensionCount;
+        SDL_Vulkan_GetInstanceExtensions(nullptr, &sdlExtensionCount, nullptr);
+
+        auto sdlExtensionNames{std::make_unique<const char**>(new const char*[sdlExtensionCount])};
+        SDL_Vulkan_GetInstanceExtensions(nullptr, &sdlExtensionCount, *sdlExtensionNames);
+        std::vector<const char*> sdlExtensions(*sdlExtensionNames, *sdlExtensionNames + sdlExtensionCount);
+
+
+        std::cout << "Extensions:" << sdlExtensionCount << std::endl;
         for (const auto& extension : availableExtensions) {
             bool enabled = false;
-            for (auto i = 0u; i < glfwExtensionCount; ++i) {
-                if (!strcmp(extension.extensionName, glfwExtensions[i])) {
+            for (auto i = 0u; i < sdlExtensionCount; ++i) {
+                if (!strcmp(extension.extensionName, (*sdlExtensionNames)[i])) {
                     enabled = true;
                     break;
                 }
             }
             std::cout << "\t" << ((enabled) ? " [X] " : " [ ] ") << extension.extensionName << std::endl;
         }
-
-        std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
 #ifdef DEBUG
-        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+        sdlExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
-        return extensions;
+        return sdlExtensions;
     }
 
     void cleanup() {
@@ -830,8 +873,8 @@ private:
         instance.destroyDebugUtilsMessengerEXT(debugMessenger);
 #endif
         instance.destroy();
-        glfwDestroyWindow(window);
-        glfwTerminate();
+        SDL_DestroyWindow(window);
+        SDL_Quit();
     }
     
     void cleanupSwapChain()
@@ -849,7 +892,7 @@ private:
         device.destroySwapchainKHR(swapchain);
     }
     
-    GLFWwindow* window;
+    SDL_Window* window;
 
     vk::Instance instance;
     vk::DebugUtilsMessengerEXT debugMessenger;
@@ -884,7 +927,7 @@ private:
     bool framebufferResized = false;
 };
 
-int main() {
+int SDL_main(int, char* []) {
     try {
         HelloTriangleApplication app {};
         app.run();
