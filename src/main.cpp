@@ -1,7 +1,15 @@
 //#define GLFW_INCLUDE_VULKAN
 #define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 #define NOMINMAX
-#include <vulkan/Vulkan.hpp>
+#ifdef __ANDROID__
+//#include "vulkan-wrapper-patch.h"
+#include <android/asset_manager.h>
+#include <jni.h>
+#include <android/asset_manager_jni.h>
+#include <vulkan_wrapper.h>
+#undef VK_NO_PROTOTYPES
+#endif
+#include <vulkan/vulkan.hpp>
 #include "SDL.h"
 #include <SDL_vulkan.h>
 
@@ -26,7 +34,9 @@
 #include <mutex>
 #endif
 
+#ifndef __ANDROID__
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
+#endif
 
 static constexpr int k_width = 800;
 static constexpr int k_height = 600;
@@ -190,6 +200,13 @@ public:
 
 private:
     void initVulkan() {
+#ifdef __ANDROID__
+        // Try to dynamically load the Vulkan library and seed the function pointer mapping.
+        if (!InitVulkan())
+        {
+            return;
+        }
+#endif
         createInstance();
 #ifdef DEBUG
         setupDebugMessenger();
@@ -581,10 +598,27 @@ private:
             renderFinishedSemaphores[i] = device.createSemaphore(semaphoreInfo);
             inFlightFences[i] = device.createFence(fenceInfo);
         }
-
     }
 
     static std::vector<char> readFile(const std::string& filename) {
+#ifdef __ANDROID__
+        JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();  // Pointer to native interface
+        jint ver = env->GetVersion();
+        jobject activity = (jobject)SDL_AndroidGetActivity();
+        jclass clazz(env->GetObjectClass(activity));
+        jmethodID midGetContext = env->GetStaticMethodID(clazz, "getContext","()Landroid/content/Context;");
+        auto context = env->CallStaticObjectMethod(clazz, midGetContext);
+        auto mid = env->GetMethodID(env->GetObjectClass(context), "getAssets", "()Landroid/content/res/AssetManager;");
+        jobject ez = env->CallObjectMethod(context, mid);
+        
+        AAssetManager *assetManager = AAssetManager_fromJava(env, ez);
+        AAsset* asset = AAssetManager_open(assetManager, filename.c_str(), AASSET_MODE_STREAMING);
+        size_t size = AAsset_getLength(asset);
+        std::vector<char> buffer(size);
+        AAsset_read(asset, buffer.data(), size);
+        AAsset_close(asset);
+        return buffer;
+#else
         std::ifstream file(filename, std::ios::ate | std::ios::binary);
             
         if (!file.is_open()) {
@@ -598,10 +632,15 @@ private:
         file.read(buffer.data(), fileSize);
         file.close();
         return buffer;
+#endif
     }
 
     static std::string getShaderPath() {
+#if defined(__ANDROID__)
+        return "shaders";
+#else
         return getExecutablePath() + "/shaders";
+#endif
     }
 
     static std::string getExecutablePath() {
@@ -628,6 +667,8 @@ private:
             path = execPath.substr(0, lastSlash);
         });
         return path;
+#elif defined(__ANDROID__)
+        return "";
 #else
         static const std::string empty;
         return empty;
@@ -780,9 +821,9 @@ private:
     }
 
     void createInstance() {
-        vk::DynamicLoader dl;
-        PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
-        VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
+        //vk::DynamicLoader dl;
+        //PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
+        //VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
 #ifdef DEBUG
         if (!checkValidationLayerSupport()) {
             throw std::runtime_error("validation layers requested, but not available!");
@@ -807,7 +848,7 @@ private:
 #endif
 
         instance = vk::createInstance(createInfo);
-        VULKAN_HPP_DEFAULT_DISPATCHER.init(instance);
+        //VULKAN_HPP_DEFAULT_DISPATCHER.init(instance);
     }
     
 #ifdef DEBUG

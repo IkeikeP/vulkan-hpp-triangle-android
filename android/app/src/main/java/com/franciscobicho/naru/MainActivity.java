@@ -1,14 +1,13 @@
 package com.franciscobicho.naru;
 
-import androidx.appcompat.app.AppCompatActivity;
+import org.libsdl.app.SDLActivity;
 
-import android.os.Bundle;
-
-public class MainActivity extends AppCompatActivity {
-
+public class MainActivity extends SDLActivity {
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
+    protected String[] getLibraries() {
+        return new String[]{
+                "SDL2",
+                "Naru"
+        };
     }
 }
