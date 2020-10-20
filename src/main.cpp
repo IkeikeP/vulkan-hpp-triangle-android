@@ -606,7 +606,7 @@ private:
         jint ver = env->GetVersion();
         jobject activity = (jobject)SDL_AndroidGetActivity();
         jclass clazz(env->GetObjectClass(activity));
-        jmethodID midGetContext = env->GetStaticMethodID(clazz, "getContext","()Landroid/content/Context;");
+        jmethodID midGetContext = env->GetStaticMethodID(clazz, "getContext", "()Landroid/content/Context;");
         auto context = env->CallStaticObjectMethod(clazz, midGetContext);
         auto mid = env->GetMethodID(env->GetObjectClass(context), "getAssets", "()Landroid/content/res/AssetManager;");
         jobject ez = env->CallObjectMethod(context, mid);
@@ -712,18 +712,14 @@ private:
     }
 
     void mainLoop() {
-        while(true)
-        {
+        while(true) {
             SDL_Event event;
             // Each loop we will process any events that are waiting for us.
             bool quit = false;
-            while (SDL_PollEvent(&event))
-            {
-                switch (event.type)
-                {
+            while (SDL_PollEvent(&event)) {
+                switch (event.type) {
                     case SDL_WINDOWEVENT:
-                        if (event.window.event == SDL_WINDOWEVENT_RESIZED)
-                        {
+                        if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
                             onWindowResize();
                         }
                         break;
@@ -732,8 +728,7 @@ private:
                         quit = true;
 
                     case SDL_KEYDOWN:
-                        if (event.key.keysym.sym == SDLK_ESCAPE)
-                        {
+                        if (event.key.keysym.sym == SDLK_ESCAPE) {
                             quit = true;
                         }
                         break;
@@ -741,8 +736,9 @@ private:
                         break;
                 }
             }
-            if (quit)
+            if (quit) {
                 break;
+            }
             drawFrame();
         }
         device.waitIdle();
