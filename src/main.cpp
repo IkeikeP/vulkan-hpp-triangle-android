@@ -225,7 +225,7 @@ private:
     }
 
     void createSurface() {
-        VkSurfaceKHR temporarySurface = static_cast<VkSurfaceKHR>(surface);
+        VkSurfaceKHR temporarySurface;
 
         // Ask SDL to create a Vulkan surface from its window.
         if (!SDL_Vulkan_CreateSurface(window, instance, &temporarySurface))
@@ -588,7 +588,9 @@ private:
     void createSyncObjects() {
         imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
         renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+        inFlightFences.clear();
         inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
+        imagesInFlight.clear();
         imagesInFlight.resize(swapChainImages.size(), nullptr);
         vk::SemaphoreCreateInfo semaphoreInfo{};
         vk::FenceCreateInfo fenceInfo{};
@@ -703,8 +705,12 @@ private:
             SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
             k_width, k_height,
             SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN | SDL_WINDOW_ALLOW_HIGHDPI);
-
+#ifdef __ANDROID__
+        SDL_SetWindowFullscreen(window, SDL_TRUE);
+#else
         SDL_SetWindowFullscreen(window, SDL_FALSE);
+#endif
+
     }
 
     void onWindowResize() {
@@ -712,16 +718,17 @@ private:
     }
 
     void mainLoop() {
-        while(true) {
+        while (true) {
             SDL_Event event;
             // Each loop we will process any events that are waiting for us.
             bool quit = false;
             while (SDL_PollEvent(&event)) {
                 switch (event.type) {
                     case SDL_WINDOWEVENT:
-                        if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
-                            onWindowResize();
-                        }
+                        //onWindowResize();
+                        break;
+                    case SDL_RENDER_DEVICE_RESET:
+                        smartRecreate();
                         break;
 
                     case SDL_QUIT:
@@ -748,6 +755,8 @@ private:
         device.waitForFences(1, &inFlightFences[currentFrame], true, UINT64_MAX);
         uint32_t imageIndex;
 
+        if (framebufferResized)
+            recreateSwapChain();
         // acquireNextImageKHR will signal semaphore when complete
         auto result = device.acquireNextImageKHR(swapchain, UINT64_MAX, imageAvailableSemaphores[currentFrame], nullptr);
         if (result.result == vk::Result::eErrorOutOfDateKHR) {
@@ -804,7 +813,7 @@ private:
         {
             LOG("AAAA");
         }
-        vkDeviceWaitIdle(device);
+        device.waitIdle();
 
         cleanupSwapChain();
 
@@ -912,6 +921,31 @@ private:
         instance.destroy();
         SDL_DestroyWindow(window);
         SDL_Quit();
+    }
+
+    void smartRecreate() {
+        device.waitIdle();
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+            device.destroySemaphore(renderFinishedSemaphores[i]);
+            device.destroySemaphore(imageAvailableSemaphores[i]);
+            device.destroyFence(inFlightFences[i]);
+        }
+        cleanupSwapChain();
+        device.destroyCommandPool(commandPool);
+        instance.destroySurfaceKHR(surface);
+        device.destroy();
+
+        createSurface();
+        pickPhysicalDevice();
+        createLogicalDevice();
+        createSwapChain();
+        createImageViews();
+        createRenderPass();
+        createGraphicsPipeline();
+        createFramebuffers();
+        createCommandPool();
+        createCommandBuffers();
+        createSyncObjects();
     }
     
     void cleanupSwapChain()
