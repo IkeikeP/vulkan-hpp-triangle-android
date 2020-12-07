@@ -2,7 +2,7 @@
 
 /*
  * Vulkan API definitions to assist with issues in the `vulkan_wrapper.h/vulkan_wrapper.cpp`
- * which ships with the Android NDK 20 when using the `vulkan.hpp` header.
+ * which ships with the Android NDK 21 when using the `vulkan.hpp` header.
  */
 
 #define VK_NO_PROTOTYPES 1

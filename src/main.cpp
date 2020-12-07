@@ -1,10 +1,10 @@
 #define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 #define NOMINMAX
 #ifdef __ANDROID__
-//#include "vulkan-wrapper-patch.h"
 #include <android/asset_manager.h>
 #include <jni.h>
 #include <android/asset_manager_jni.h>
+#include "vulkan-wrapper-patch.h"
 #include <vulkan_wrapper.h>
 #undef VK_NO_PROTOTYPES
 #endif
