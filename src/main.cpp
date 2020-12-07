@@ -1,4 +1,3 @@
-//#define GLFW_INCLUDE_VULKAN
 #define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 #define NOMINMAX
 #ifdef __ANDROID__
@@ -826,9 +825,11 @@ private:
     }
 
     void createInstance() {
-        //vk::DynamicLoader dl;
-        //PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
-        //VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
+#ifndef __ANDROID__
+        vk::DynamicLoader dl;
+        PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
+        VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
+#endif
 #ifdef DEBUG
         if (!checkValidationLayerSupport()) {
             throw std::runtime_error("validation layers requested, but not available!");
@@ -853,7 +854,9 @@ private:
 #endif
 
         instance = vk::createInstance(createInfo);
-        //VULKAN_HPP_DEFAULT_DISPATCHER.init(instance);
+#ifndef __ANDROID__
+        VULKAN_HPP_DEFAULT_DISPATCHER.init(instance);
+#endif
     }
     
 #ifdef DEBUG
