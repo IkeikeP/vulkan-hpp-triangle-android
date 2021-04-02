@@ -140,8 +140,7 @@ public:
 
     vk::SurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats)
     {
-        for (const auto& availableFormat : availableFormats)
-        {
+        for (const auto& availableFormat : availableFormats) {
             if (availableFormat.format == vk::Format::eB8G8R8A8Srgb
                 && availableFormat.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
                 return availableFormat;
@@ -201,8 +200,7 @@ private:
     void initVulkan() {
 #ifdef __ANDROID__
         // Try to dynamically load the Vulkan library and seed the function pointer mapping.
-        if (!InitVulkan())
-        {
+        if (!InitVulkan()) {
             return;
         }
 #endif
@@ -227,8 +225,7 @@ private:
         VkSurfaceKHR temporarySurface;
 
         // Ask SDL to create a Vulkan surface from its window.
-        if (!SDL_Vulkan_CreateSurface(window, instance, &temporarySurface))
-        {
+        if (!SDL_Vulkan_CreateSurface(window, instance, &temporarySurface)) {
             throw std::runtime_error("SDL could not create a Vulkan surface.");
         }
         surface = vk::SurfaceKHR(temporarySurface);
@@ -523,8 +520,7 @@ private:
 
     void createFramebuffers() {
         swapChainFramebuffers.resize(swapChainImageViews.size());
-        for (size_t index = 0; index < swapChainImageViews.size(); index++)
-        {
+        for (size_t index = 0; index < swapChainImageViews.size(); index++) {
             vk::ImageView attachments[] = { swapChainImageViews[index] };
             vk::FramebufferCreateInfo frameBufferInfo{};
             frameBufferInfo.setRenderPass(renderPass) // specify with which renderPass needs to be compatible
@@ -727,7 +723,7 @@ private:
                         //onWindowResize();
                         break;
                     case SDL_RENDER_DEVICE_RESET:
-                        smartRecreate();
+                        recreateVulkanStructures();
                         break;
 
                     case SDL_QUIT:
@@ -804,14 +800,9 @@ private:
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
     }
 
-    void recreateSwapChain()
-    {
+    void recreateSwapChain() {
         int width = 0, height = 0;
         SDL_GetWindowSize(window, &width, &height);
-        if (width == 0 || height == 0)
-        {
-            LOG("AAAA");
-        }
         device.waitIdle();
 
         cleanupSwapChain();
@@ -926,7 +917,7 @@ private:
         SDL_Quit();
     }
 
-    void smartRecreate() {
+    void recreateVulkanStructures() {
         device.waitIdle();
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             device.destroySemaphore(renderFinishedSemaphores[i]);
@@ -951,8 +942,7 @@ private:
         createSyncObjects();
     }
     
-    void cleanupSwapChain()
-    {
+    void cleanupSwapChain() {
         for (auto framebuffer : swapChainFramebuffers) {
             device.destroyFramebuffer(framebuffer);
         }

@@ -5,11 +5,10 @@ project(Naru VERSION 1.0.0 LANGUAGES CXX)
 
 if (ANDROID)
     add_library(${PROJECT_NAME} SHARED)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -fexceptions")
 else()
     add_executable(${PROJECT_NAME})
-    target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
 endif()
+target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
 
 if (NOT ANDROID)
     # Build type
@@ -62,7 +61,7 @@ else()
         endif()
 endif()
 
-# sdl
+# SDL
 set(SDL_STATIC ON CACHE BOOL "" FORCE)
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
 set(HIDAPI OFF CACHE BOOL "" FORCE)
