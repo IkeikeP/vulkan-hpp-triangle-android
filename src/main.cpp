@@ -1,8 +1,16 @@
-//#define GLFW_INCLUDE_VULKAN
 #define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 #define NOMINMAX
-#include <vulkan/Vulkan.hpp>
-#include <GLFW/glfw3.h>
+#ifdef __ANDROID__
+#include <android/asset_manager.h>
+#include <jni.h>
+#include <android/asset_manager_jni.h>
+#include "vulkan-wrapper-patch.h"
+#include <vulkan_wrapper.h>
+#undef VK_NO_PROTOTYPES
+#endif
+#include <vulkan/vulkan.hpp>
+#include "SDL.h"
+#include <SDL_vulkan.h>
 
 #include <algorithm>
 #include <iostream>
@@ -25,7 +33,9 @@
 #include <mutex>
 #endif
 
+#ifndef __ANDROID__
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
+#endif
 
 static constexpr int k_width = 800;
 static constexpr int k_height = 600;
@@ -130,8 +140,7 @@ public:
 
     vk::SurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats)
     {
-        for (const auto& availableFormat : availableFormats)
-        {
+        for (const auto& availableFormat : availableFormats) {
             if (availableFormat.format == vk::Format::eB8G8R8A8Srgb
                 && availableFormat.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
                 return availableFormat;
@@ -157,7 +166,7 @@ public:
             return capabilities.currentExtent;
         } else {
             int width, height;
-            glfwGetFramebufferSize(window, &width, &height);
+            SDL_GetWindowSize(window, &width, &height);
             vk::Extent2D actualExtent = {(uint32_t)width, (uint32_t)height};
             actualExtent.width = std::clamp(actualExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
             actualExtent.height = std::clamp(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
@@ -189,6 +198,12 @@ public:
 
 private:
     void initVulkan() {
+#ifdef __ANDROID__
+        // Try to dynamically load the Vulkan library and seed the function pointer mapping.
+        if (!InitVulkan()) {
+            return;
+        }
+#endif
         createInstance();
 #ifdef DEBUG
         setupDebugMessenger();
@@ -207,9 +222,11 @@ private:
     }
 
     void createSurface() {
-        VkSurfaceKHR temporarySurface = static_cast<VkSurfaceKHR>(surface);
-        if (glfwCreateWindowSurface(instance, window, nullptr, &temporarySurface) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create window surface!");
+        VkSurfaceKHR temporarySurface;
+
+        // Ask SDL to create a Vulkan surface from its window.
+        if (!SDL_Vulkan_CreateSurface(window, instance, &temporarySurface)) {
+            throw std::runtime_error("SDL could not create a Vulkan surface.");
         }
         surface = vk::SurfaceKHR(temporarySurface);
     }
@@ -503,8 +520,7 @@ private:
 
     void createFramebuffers() {
         swapChainFramebuffers.resize(swapChainImageViews.size());
-        for (size_t index = 0; index < swapChainImageViews.size(); index++)
-        {
+        for (size_t index = 0; index < swapChainImageViews.size(); index++) {
             vk::ImageView attachments[] = { swapChainImageViews[index] };
             vk::FramebufferCreateInfo frameBufferInfo{};
             frameBufferInfo.setRenderPass(renderPass) // specify with which renderPass needs to be compatible
@@ -567,7 +583,9 @@ private:
     void createSyncObjects() {
         imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
         renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+        inFlightFences.clear();
         inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
+        imagesInFlight.clear();
         imagesInFlight.resize(swapChainImages.size(), nullptr);
         vk::SemaphoreCreateInfo semaphoreInfo{};
         vk::FenceCreateInfo fenceInfo{};
@@ -577,10 +595,27 @@ private:
             renderFinishedSemaphores[i] = device.createSemaphore(semaphoreInfo);
             inFlightFences[i] = device.createFence(fenceInfo);
         }
-
     }
 
     static std::vector<char> readFile(const std::string& filename) {
+#ifdef __ANDROID__
+        JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();  // Pointer to native interface
+        jint ver = env->GetVersion();
+        jobject activity = (jobject)SDL_AndroidGetActivity();
+        jclass clazz(env->GetObjectClass(activity));
+        jmethodID midGetContext = env->GetStaticMethodID(clazz, "getContext", "()Landroid/content/Context;");
+        auto context = env->CallStaticObjectMethod(clazz, midGetContext);
+        auto mid = env->GetMethodID(env->GetObjectClass(context), "getAssets", "()Landroid/content/res/AssetManager;");
+        jobject ez = env->CallObjectMethod(context, mid);
+        
+        AAssetManager *assetManager = AAssetManager_fromJava(env, ez);
+        AAsset* asset = AAssetManager_open(assetManager, filename.c_str(), AASSET_MODE_STREAMING);
+        size_t size = AAsset_getLength(asset);
+        std::vector<char> buffer(size);
+        AAsset_read(asset, buffer.data(), size);
+        AAsset_close(asset);
+        return buffer;
+#else
         std::ifstream file(filename, std::ios::ate | std::ios::binary);
             
         if (!file.is_open()) {
@@ -594,10 +629,15 @@ private:
         file.read(buffer.data(), fileSize);
         file.close();
         return buffer;
+#endif
     }
 
     static std::string getShaderPath() {
+#if defined(__ANDROID__)
+        return "shaders";
+#else
         return getExecutablePath() + "/shaders";
+#endif
     }
 
     static std::string getExecutablePath() {
@@ -624,6 +664,8 @@ private:
             path = execPath.substr(0, lastSlash);
         });
         return path;
+#elif defined(__ANDROID__)
+        return "";
 #else
         static const std::string empty;
         return empty;
@@ -649,21 +691,56 @@ private:
     }
 
     void initWindow() {
-        glfwInit();
-        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        window = glfwCreateWindow(k_width, k_height, "Vulkan", nullptr, nullptr);
-        glfwSetWindowUserPointer(window, this);
-        glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+        if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
+		    std::cerr << "Failed to initialize SDL:" << SDL_GetError() << std::endl;
+            throw std::runtime_error("Failed to initialize SDL!");
+	    }
+        window = SDL_CreateWindow(
+            "A Simple Triangle",
+            SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+            k_width, k_height,
+            SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN | SDL_WINDOW_ALLOW_HIGHDPI);
+#ifdef __ANDROID__
+        SDL_SetWindowFullscreen(window, SDL_TRUE);
+#else
+        SDL_SetWindowFullscreen(window, SDL_FALSE);
+#endif
+
     }
 
-    static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
-        auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
-        app->framebufferResized = true;
+    void onWindowResize() {
+        framebufferResized = true;
     }
 
     void mainLoop() {
-        while (!glfwWindowShouldClose(window)) {
-            glfwPollEvents();
+        while (true) {
+            SDL_Event event;
+            // Each loop we will process any events that are waiting for us.
+            bool quit = false;
+            while (SDL_PollEvent(&event)) {
+                switch (event.type) {
+                    case SDL_WINDOWEVENT:
+                        //onWindowResize();
+                        break;
+                    case SDL_RENDER_DEVICE_RESET:
+                        recreateVulkanStructures();
+                        break;
+
+                    case SDL_QUIT:
+                        quit = true;
+
+                    case SDL_KEYDOWN:
+                        if (event.key.keysym.sym == SDLK_ESCAPE) {
+                            quit = true;
+                        }
+                        break;
+                    default:
+                        break;
+                }
+            }
+            if (quit) {
+                break;
+            }
             drawFrame();
         }
         device.waitIdle();
@@ -673,6 +750,8 @@ private:
         device.waitForFences(1, &inFlightFences[currentFrame], true, UINT64_MAX);
         uint32_t imageIndex;
 
+        if (framebufferResized)
+            recreateSwapChain();
         // acquireNextImageKHR will signal semaphore when complete
         auto result = device.acquireNextImageKHR(swapchain, UINT64_MAX, imageAvailableSemaphores[currentFrame], nullptr);
         if (result.result == vk::Result::eErrorOutOfDateKHR) {
@@ -721,15 +800,10 @@ private:
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
     }
 
-    void recreateSwapChain()
-    {
+    void recreateSwapChain() {
         int width = 0, height = 0;
-        glfwGetFramebufferSize(window, &width, &height);
-        while (width == 0 || height == 0) {
-            glfwGetFramebufferSize(window, &width, &height);
-            glfwWaitEvents();
-        }
-        vkDeviceWaitIdle(device);
+        SDL_GetWindowSize(window, &width, &height);
+        device.waitIdle();
 
         cleanupSwapChain();
 
@@ -742,9 +816,11 @@ private:
     }
 
     void createInstance() {
+#ifndef __ANDROID__
         vk::DynamicLoader dl;
         PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
         VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
+#endif
 #ifdef DEBUG
         if (!checkValidationLayerSupport()) {
             throw std::runtime_error("validation layers requested, but not available!");
@@ -769,7 +845,9 @@ private:
 #endif
 
         instance = vk::createInstance(createInfo);
+#ifndef __ANDROID__
         VULKAN_HPP_DEFAULT_DISPATCHER.init(instance);
+#endif
     }
     
 #ifdef DEBUG
@@ -791,29 +869,34 @@ private:
     }
 
     std::vector<const char*> getRequiredExtensions() {
-        uint32_t extensionCount = 0, glfwExtensionCount = 0;
+        uint32_t extensionCount = 0;
         vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
         std::vector<VkExtensionProperties> availableExtensions(extensionCount);
         vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, availableExtensions.data());
-        const char** glfwExtensions;
-        glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-        std::cout << "Extensions:" << glfwExtensionCount << std::endl;
+            
+        uint32_t sdlExtensionCount;
+        SDL_Vulkan_GetInstanceExtensions(nullptr, &sdlExtensionCount, nullptr);
+
+        auto sdlExtensionNames{std::make_unique<const char**>(new const char*[sdlExtensionCount])};
+        SDL_Vulkan_GetInstanceExtensions(nullptr, &sdlExtensionCount, *sdlExtensionNames);
+        std::vector<const char*> sdlExtensions(*sdlExtensionNames, *sdlExtensionNames + sdlExtensionCount);
+
+
+        std::cout << "Extensions:" << sdlExtensionCount << std::endl;
         for (const auto& extension : availableExtensions) {
             bool enabled = false;
-            for (auto i = 0u; i < glfwExtensionCount; ++i) {
-                if (!strcmp(extension.extensionName, glfwExtensions[i])) {
+            for (auto i = 0u; i < sdlExtensionCount; ++i) {
+                if (!strcmp(extension.extensionName, (*sdlExtensionNames)[i])) {
                     enabled = true;
                     break;
                 }
             }
             std::cout << "\t" << ((enabled) ? " [X] " : " [ ] ") << extension.extensionName << std::endl;
         }
-
-        std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
 #ifdef DEBUG
-        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+        sdlExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
-        return extensions;
+        return sdlExtensions;
     }
 
     void cleanup() {
@@ -830,12 +913,36 @@ private:
         instance.destroyDebugUtilsMessengerEXT(debugMessenger);
 #endif
         instance.destroy();
-        glfwDestroyWindow(window);
-        glfwTerminate();
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+    }
+
+    void recreateVulkanStructures() {
+        device.waitIdle();
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+            device.destroySemaphore(renderFinishedSemaphores[i]);
+            device.destroySemaphore(imageAvailableSemaphores[i]);
+            device.destroyFence(inFlightFences[i]);
+        }
+        cleanupSwapChain();
+        device.destroyCommandPool(commandPool);
+        instance.destroySurfaceKHR(surface);
+        device.destroy();
+
+        createSurface();
+        pickPhysicalDevice();
+        createLogicalDevice();
+        createSwapChain();
+        createImageViews();
+        createRenderPass();
+        createGraphicsPipeline();
+        createFramebuffers();
+        createCommandPool();
+        createCommandBuffers();
+        createSyncObjects();
     }
     
-    void cleanupSwapChain()
-    {
+    void cleanupSwapChain() {
         for (auto framebuffer : swapChainFramebuffers) {
             device.destroyFramebuffer(framebuffer);
         }
@@ -849,7 +956,7 @@ private:
         device.destroySwapchainKHR(swapchain);
     }
     
-    GLFWwindow* window;
+    SDL_Window* window;
 
     vk::Instance instance;
     vk::DebugUtilsMessengerEXT debugMessenger;
@@ -884,7 +991,7 @@ private:
     bool framebufferResized = false;
 };
 
-int main() {
+int SDL_main(int, char* []) {
     try {
         HelloTriangleApplication app {};
         app.run();

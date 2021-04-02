@@ -34,3 +34,15 @@ source_group("Naru\\Shaders\\Bin" FILES ${COMPILED_SHADERS})
 add_custom_target(shaders DEPENDS ${COMPILED_SHADERS})
 
 add_dependencies(${PROJECT_NAME} shaders)
+if (ANDROID)
+    list(GET ANDROID_ASSETS_DIRECTORIES 0 first-android-assets-dir)
+	message(STATUS "Android Assets Directory : ${ANDROID_ASSETS_DIRECTORIES}")
+    set (source "${CMAKE_CURRENT_BINARY_DIR}")
+    set (destination "${first-android-assets-dir}\\shaders")
+    add_custom_command(
+        TARGET shaders POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E create_symlink ${source} ${destination} 
+        DEPENDS ${destination}
+        COMMENT "symbolic link resources folder from ${source} => ${destination}"
+    )
+endif()
