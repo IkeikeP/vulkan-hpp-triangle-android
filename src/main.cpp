@@ -21,10 +21,7 @@
 #include <set>
 #include <cstdint>
 #include <fstream>
-#ifdef DEBUG
-#include <magic_enum.hpp>
-#endif
-#ifdef WIN32
+#ifdef _WIN32
 #include <Windows.h>
 #include <mutex>
 #elif defined(__linux__) && !defined(__ANDROID__)

@@ -48,7 +48,7 @@ if(ANDROID)
     target_link_libraries(${PROJECT_NAME} VKWRAPPER)
     target_include_directories(${PROJECT_NAME} PRIVATE android/app/src/main/cpp)
 
-    # This is the built in NDK logging library
+    # This is the built-in NDK logging library
     find_library(log-lib log)
     target_link_libraries(${PROJECT_NAME} ${log-lib})
 else()
@@ -67,18 +67,9 @@ set(SDL_SHARED OFF CACHE BOOL "" FORCE)
 set(HIDAPI OFF CACHE BOOL "" FORCE)
 add_subdirectory(src/libs/sdl)
 
-# Debug
-if(CMAKE_BUILD_TYPE MATCHES Debug)
-    # Magic enum
-    target_include_directories(${PROJECT_NAME}
-        PRIVATE src/libs/magic_enum/include
-    )
-endif()
-
 # Include directories
 target_include_directories(${PROJECT_NAME}
     PRIVATE ${Vulkan_INCLUDE_DIR}
-    PUBLIC src/libs/glm
 )
 
 # Link libraries
