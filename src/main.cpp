@@ -21,10 +21,7 @@
 #include <set>
 #include <cstdint>
 #include <fstream>
-#ifdef DEBUG
-#include <magic_enum.hpp>
-#endif
-#ifdef WIN32
+#ifdef _WIN32
 #include <Windows.h>
 #include <mutex>
 #elif defined(__linux__) && !defined(__ANDROID__)
@@ -720,7 +717,7 @@ private:
             while (SDL_PollEvent(&event)) {
                 switch (event.type) {
                     case SDL_WINDOWEVENT:
-                        //onWindowResize();
+                        onWindowResize();
                         break;
                     case SDL_RENDER_DEVICE_RESET:
                         recreateVulkanStructures();
