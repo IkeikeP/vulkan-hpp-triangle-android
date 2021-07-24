@@ -717,7 +717,7 @@ private:
             while (SDL_PollEvent(&event)) {
                 switch (event.type) {
                     case SDL_WINDOWEVENT:
-                        //onWindowResize();
+                        onWindowResize();
                         break;
                     case SDL_RENDER_DEVICE_RESET:
                         recreateVulkanStructures();
