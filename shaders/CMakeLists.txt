@@ -42,7 +42,7 @@ if (ANDROID)
     file(MAKE_DIRECTORY ${destination})
     foreach(SHADER ${COMPILED_SHADERS})
         add_custom_command(
-            TARGET shaders POST_BUILD
+            TARGET shaders PRE_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different "${source}\\${SHADER}" "${destination}\\${SHADER}" 
             DEPENDS ${destination}
             COMMENT "Copied file ${SHADER} from ${source} => ${destination}"
