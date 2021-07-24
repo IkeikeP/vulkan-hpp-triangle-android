@@ -39,6 +39,7 @@ if (ANDROID)
 	message(STATUS "Android Assets Directory : ${ANDROID_ASSETS_DIRECTORIES}")
     set (source "${CMAKE_CURRENT_BINARY_DIR}")
     set (destination "${first-android-assets-dir}\\shaders")
+    file(MAKE_DIRECTORY ${destination})
     add_custom_command(
         TARGET shaders POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E create_symlink ${source} ${destination} 
